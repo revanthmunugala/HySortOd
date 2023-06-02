@@ -110,7 +110,7 @@ int main(int argc, char **argv)
         normalizeDataset(dataset, N, DIM);
     }
 
-    struct Hypercube *Hypercube;
+    struct Hypercube *Hypercube = NULL;
     createHypercube(&Hypercube, dataset, N, DIM, BIN);
     sort(&Hypercube);
 
@@ -245,6 +245,8 @@ void appendHypercube(struct Hypercube **hypercube, struct hypercube *curHypercub
     {
         (*hypercube) = malloc(sizeof(struct Hypercube));
         (*hypercube)->count = 0;
+        (*hypercube)->grid = NULL;
+        (*hypercube)->instancesCount = NULL;
     }
 
     (*hypercube)->grid = realloc((*hypercube)->grid, sizeof(struct hypercube) * ((*hypercube)->count + 1));
