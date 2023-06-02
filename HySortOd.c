@@ -10,8 +10,8 @@ int DIM;
 // compile
 // gcc HySortOd.c -lm -o HySortOd
 
-// run example with 10 lines 3 dimensions 4 parititions per dim(Bin) 100(MINSPLIT)
-// ./HySortOd 10 3 4 100 dataset_fixed.txt
+// run example with 10 lines 3 dimensions 4 parititions per dim(Bin) 100(MINSPLIT) No normalization(0) dataset_fixed(dataset)
+// ./HySortOd 10 3 4 100 0 dataset_fixed.txt
 
 // Custom structures
 struct hypercube
@@ -41,7 +41,7 @@ struct treeNode
 };
 
 // function prototypes
-int importDataset(char *fname, int N, double **dataset);
+int importDataset(char *fname, int N, double **dataset, int DIM);
 void normalizeDataset(double **dataset, int N, int DIM);
 int isPresent(struct Hypercube *hypercube, struct hypercube *curHypercube, int DIM);
 void appendHypercube(struct Hypercube **hypercube, struct hypercube *curHypercube, int DIM);
@@ -50,40 +50,31 @@ int compfn(const void *a, const void *b);
 void sort(struct Hypercube **hypercube);
 void appendNode(struct treeNode *root, int begin, int end, int coordinate);
 void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int curDim, int MINSPLIT);
+int neighborhood_density(struct Hypercube *hypercube, struct treeNode *root, int hypercubeIndex, int curDim);
+void outlierScore(struct Hypercube *hypercube, struct treeNode *root, int *neighborDensity, int *maxDensity, int N, int DIM);
+void printOutlierScore(int *density, int maxDensity, int count);
 
 int main(int argc, char **argv)
 {
     // Process command-line arguments
-    /*
     int N;
-    int DIM;
     int BIN;
     int MINSPLIT;
     int NORMALIZE;
     char inputFname[500];
-    */
 
-    int N = 10;
-    DIM = 4;
-    int BIN = 4;
-    int MINSPLIT = 1;
-    int NORMALIZE = 0;
-    char inputFname[500] = "dataset_fixed.txt";
+    if (argc != 7)
+    {
+        fprintf(stderr, "Please provide the following on the command line: N (number of lines in the file), dimensionality (number of coordinates per point/feature vector), BIN (Bin parameter), Min Split(Threshold), Normalize (0 or 1)dataset filename. Your input: %s\n", argv[0]);
+        return 0;
+    }
 
-    /*
-      if (argc != 7)
-      {
-          fprintf(stderr, "Please provide the following on the command line: N (number of lines in the file), dimensionality (number of coordinates per point/feature vector), BIN (Bin parameter), Min Split(Threshold), Normalize (0 or 1)dataset filename. Your input: %s\n", argv[0]);
-          return 0;
-      }
-
-      sscanf(argv[1], "%d", &N);
-      sscanf(argv[2], "%d", &DIM);
-      sscanf(argv[3], "%d", &BIN);
-      sscanf(argv[4], "%d", &MINSPLIT);
-      sscanf(argv[5], "%d", &NORMALIZE);
-      strcpy(inputFname, argv[6]);
-      */
+    sscanf(argv[1], "%d", &N);
+    sscanf(argv[2], "%d", &DIM);
+    sscanf(argv[3], "%d", &BIN);
+    sscanf(argv[4], "%d", &MINSPLIT);
+    sscanf(argv[5], "%d", &NORMALIZE);
+    strcpy(inputFname, argv[6]);
 
     // pointer to entire dataset
     double **dataset;
@@ -105,7 +96,7 @@ int main(int argc, char **argv)
             dataset[i] = (double *)malloc(sizeof(double) * DIM);
         }
 
-        int ret = importDataset(inputFname, N, dataset);
+        int ret = importDataset(inputFname, N, dataset, DIM);
 
         if (ret == 1)
         {
@@ -123,17 +114,6 @@ int main(int argc, char **argv)
     createHypercube(&Hypercube, dataset, N, DIM, BIN);
     sort(&Hypercube);
 
-    /*
-    for (int i = 0; i < Hypercube->count; i++)
-    {
-        for (int j = 0; j < DIM; j++)
-        {
-            printf("%d ", Hypercube->grid[i].dimensions[j]);
-        }
-        puts("");
-    }
-    */
-
     struct treeNode *root = malloc(sizeof(struct treeNode));
     root->curNode.coordinate = -1;
     root->curNode.startIndex = 0;
@@ -142,6 +122,10 @@ int main(int argc, char **argv)
     root->nextNode = NULL;
 
     buildTree(Hypercube, root, DIM, 0, MINSPLIT);
+    int *density = malloc(sizeof(int) * Hypercube->count);
+    int maxDensity = -1;
+    outlierScore(Hypercube, root->nextLevel, density, &maxDensity, N, DIM);
+    printOutlierScore(density, maxDensity, Hypercube->count);
 
     // free dataset
     for (int i = 0; i < N; i++)
@@ -153,7 +137,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-int importDataset(char *fname, int N, double **dataset)
+int importDataset(char *fname, int N, double **dataset, int DIM)
 {
 
     FILE *fp = fopen(fname, "r");
@@ -176,7 +160,7 @@ int importDataset(char *fname, int N, double **dataset)
         sscanf(field, "%lf", &tmp);
         dataset[rowCnt][colCnt] = tmp;
 
-        while (field)
+        while (field && (colCnt < DIM - 1))
         {
             colCnt++;
             field = strtok(NULL, ",");
@@ -195,6 +179,7 @@ int importDataset(char *fname, int N, double **dataset)
     return 0;
 }
 
+// Function to normalize dataset 
 void normalizeDataset(double **dataset, int N, int DIM)
 {
     double minValue;
@@ -225,6 +210,7 @@ void normalizeDataset(double **dataset, int N, int DIM)
     }
 }
 
+// Function to check if the hypercube is already present
 int isPresent(struct Hypercube *hypercube, struct hypercube *curHypercube, int DIM)
 {
     int found = -1;
@@ -252,6 +238,7 @@ int isPresent(struct Hypercube *hypercube, struct hypercube *curHypercube, int D
     return found;
 }
 
+// Function to append new hypercube into array of hypercubes(H)
 void appendHypercube(struct Hypercube **hypercube, struct hypercube *curHypercube, int DIM)
 {
     if (*hypercube == NULL)
@@ -269,6 +256,7 @@ void appendHypercube(struct Hypercube **hypercube, struct hypercube *curHypercub
     return;
 }
 
+// Function to create array of hypercubes from dataset
 void createHypercube(struct Hypercube **hypercube, double **dataset, int N, int DIM, int BIN)
 {
 
@@ -296,6 +284,7 @@ void createHypercube(struct Hypercube **hypercube, double **dataset, int N, int 
     return;
 }
 
+// Comparision function for sorting
 int compfn(const void *a, const void *b)
 {
     for (int i = 0; i < DIM; i++)
@@ -310,12 +299,14 @@ int compfn(const void *a, const void *b)
     return 0;
 }
 
+// Sort the array of hypercubes using default function
 void sort(struct Hypercube **hypercube)
 {
     qsort((*hypercube)->grid, (*hypercube)->count, sizeof(struct hypercube), compfn);
     return;
 }
 
+// Function to append nodes into tree
 void appendNode(struct treeNode *root, int begin, int end, int coordinate)
 {
     struct treeNode *myNode = malloc(sizeof(struct treeNode));
@@ -342,6 +333,7 @@ void appendNode(struct treeNode *root, int begin, int end, int coordinate)
     return;
 }
 
+// Function to build tree
 void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int curDim, int MINSPLIT)
 {
     if (root == NULL || curDim >= DIM)
@@ -378,5 +370,66 @@ void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int 
         temp = temp->nextNode;
     }
     buildTree(hypercube, root->nextLevel, DIM, curDim + 1, MINSPLIT);
+    return;
+}
+
+// Function to calculate neighborhood density for a given hypercube
+int neighborhood_density(struct Hypercube *hypercube, struct treeNode *root, int hypercubeIndex, int curDim)
+{
+    int curDensity = 0;
+
+    if (root->nextLevel == NULL)
+    {
+        while (root != NULL)
+        {
+            for (int i = root->curNode.startIndex; i <= root->curNode.endIndex; i++)
+            {
+                int curDiff = abs(hypercube->grid[hypercubeIndex].dimensions[curDim] - hypercube->grid[i].dimensions[curDim]);
+                if (curDiff <= 1)
+                {
+                    curDensity += hypercube->instancesCount[i];
+                }
+            }
+            root = root->nextNode;
+        }
+    }
+    else
+    {
+        while (root != NULL)
+        {
+            int curDiff = abs(root->curNode.coordinate - hypercube->grid[hypercubeIndex].dimensions[curDim]);
+            if (curDiff <= 1)
+            {
+                curDensity += neighborhood_density(hypercube, root->nextLevel, hypercubeIndex, curDim + 1);
+            }
+            root = root->nextNode;
+        }
+    }
+    return curDensity;
+}
+
+// Function to find max density and calculate neighborhood density of each hypercube
+void outlierScore(struct Hypercube *hypercube, struct treeNode *root, int *neighborDensity, int *maxDensity, int N, int DIM)
+{
+    for (int i = 0; i < hypercube->count; i++)
+    {
+        neighborDensity[i] = neighborhood_density(hypercube, root, i, 0);
+        if (neighborDensity[i] > *maxDensity)
+        {
+            *maxDensity = neighborDensity[i];
+        }
+    }
+    return;
+}
+
+// Function to print the outlier score of all hypercubes
+// All instances in hypercubes have same outlier score
+void printOutlierScore(int *density, int maxDensity, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        printf("Hypercube index:%d Outlier score: %lf\n", i, (float)(maxDensity - density[i]) / (float)maxDensity);
+    }
+
     return;
 }
