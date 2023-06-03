@@ -48,7 +48,7 @@ void appendHypercube(struct Hypercube **hypercube, struct hypercube *curHypercub
 void createHypercube(struct Hypercube **hypercube, double **dataset, int N, int DIM, int BIN);
 int compfn(const void *a, const void *b);
 void sort(struct Hypercube **hypercube);
-void appendNode(struct treeNode *root, int begin, int end, int coordinate);
+struct treeNode *appendNode(struct treeNode *root, int begin, int end, int coordinate);
 void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int curDim, int MINSPLIT);
 int neighborhood_density(struct Hypercube *hypercube, struct treeNode *root, int hypercubeIndex, int curDim);
 void outlierScore(struct Hypercube *hypercube, struct treeNode *root, int *neighborDensity, int *maxDensity, int N, int DIM);
@@ -179,7 +179,7 @@ int importDataset(char *fname, int N, double **dataset, int DIM)
     return 0;
 }
 
-// Function to normalize dataset 
+// Function to normalize dataset
 void normalizeDataset(double **dataset, int N, int DIM)
 {
     double minValue;
@@ -309,7 +309,7 @@ void sort(struct Hypercube **hypercube)
 }
 
 // Function to append nodes into tree
-void appendNode(struct treeNode *root, int begin, int end, int coordinate)
+struct treeNode *appendNode(struct treeNode *root, int begin, int end, int coordinate)
 {
     struct treeNode *myNode = malloc(sizeof(struct treeNode));
     myNode->curNode.coordinate = coordinate;
@@ -332,7 +332,7 @@ void appendNode(struct treeNode *root, int begin, int end, int coordinate)
 
         temp->nextNode = myNode;
     }
-    return;
+    return myNode;
 }
 
 // Function to build tree
@@ -350,6 +350,7 @@ void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int 
         int begin = temp->curNode.startIndex;
         int end = temp->curNode.endIndex;
         int curValue = hypercube->grid[begin].dimensions[curDim];
+        struct treeNode *curNode = NULL;
 
         for (int i = begin; i <= end; i++)
         {
@@ -357,7 +358,8 @@ void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int 
             {
                 if ((i - begin) > MINSPLIT)
                 {
-                    appendNode(temp, begin, i - 1, curValue);
+                    curNode = appendNode(temp, begin, i - 1, curValue);
+                    buildTree(hypercube, curNode, DIM, curDim + 1, MINSPLIT);
                 }
                 begin = i;
                 curValue = hypercube->grid[i].dimensions[curDim];
@@ -365,13 +367,14 @@ void buildTree(struct Hypercube *hypercube, struct treeNode *root, int DIM, int 
 
             if (i == end && (i - begin + 1) > MINSPLIT)
             {
-                appendNode(temp, begin, i, curValue);
+                curNode = appendNode(temp, begin, i, curValue);
+                buildTree(hypercube, curNode, DIM, curDim + 1, MINSPLIT);
             }
         }
 
         temp = temp->nextNode;
     }
-    buildTree(hypercube, root->nextLevel, DIM, curDim + 1, MINSPLIT);
+
     return;
 }
 
